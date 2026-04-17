@@ -8,71 +8,57 @@ import nodemailer from "nodemailer";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
 
-  app.use(express.json());
+app.use(express.json());
 
-  // Email API endpoint
-  app.post("/api/send-email", async (req, res) => {
-    const { subject, html } = req.body;
-    
-    console.log("SMTP_USER:", process.env.SMTP_USER ? "Defined" : "Undefined");
-    console.log("SMTP_PASS:", process.env.SMTP_PASS ? "Defined" : "Undefined");
+// Email API endpoint
+app.post("/api/send-email", async (req, res) => {
+  const { subject, html } = req.body;
+  
+  // SMTP Configuration
+  const smtpHost = process.env.SMTP_HOST || 'smtp.yandex.ru';
+  // Try 465 first for Yandex SSL if 587 fails on Vercel
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465'); 
+  const smtpUser = process.env.SMTP_USER || 'gniks1@yandex.ru'; 
+  const smtpPass = process.env.SMTP_PASS || 'rnpanrlkvdryrezi'; 
 
-    // SMTP Configuration
-    // For Yandex: 
-    // Option 1: host: 'smtp.yandex.ru', port: 465, secure: true (SSL)
-    // Option 2: host: 'smtp.yandex.ru', port: 587, secure: false (STARTTLS) - often better for cloud
-    const smtpHost = process.env.SMTP_HOST || 'smtp.yandex.ru';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-    const smtpUser = process.env.SMTP_USER || 'gniks1@yandex.ru'; 
-    const smtpPass = process.env.SMTP_PASS || 'rnpanrlkvdryrezi'; 
-
-    if (!smtpUser || !smtpPass) {
-      console.error("Missing SMTP configuration");
-      return res.status(500).json({ error: "Email service not configured" });
-    }
-
-    console.log(`Setting up transporter for ${smtpUser} via ${smtpHost}:${smtpPort}`);
-
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465, // true for 465, false for 587
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
-      tls: {
-        // Do not fail on invalid certs
-        rejectUnauthorized: false,
-        minVersion: 'TLSv1.2'
-      },
-      debug: true, // show debug output
-      logger: true // log to console
-    });
-
-    try {
-      console.log("Verifying transporter...");
-      await transporter.verify();
-      console.log("Transporter verified!");
-
-      console.log(`Attempting to send email via ${smtpHost}:${smtpPort} for user ${smtpUser}`);
-      await transporter.sendMail({
-        from: smtpUser,
-        to: "gniks1@yandex.ru",
-        subject: subject || "Новая заявка с сайта PRIZMA",
-        html: html,
-      });
-      console.log("Email sent successfully");
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Detailed Email sending error:", error);
-      res.status(500).json({ error: "Failed to send email", details: error instanceof Error ? error.message : String(error) });
-    }
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpPort === 465,
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+    tls: {
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2'
+    },
+    debug: true,
+    logger: true
   });
+
+  try {
+    await transporter.verify();
+    await transporter.sendMail({
+      from: smtpUser,
+      to: "gniks1@yandex.ru",
+      subject: subject || "Новая заявка с сайта PRIZMA",
+      html: html,
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Email error:", error);
+    res.status(500).json({ 
+      error: "Failed to send email", 
+      details: error instanceof Error ? error.message : String(error) 
+    });
+  }
+});
+
+async function startServer() {
+  const PORT = 3000;
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
@@ -89,9 +75,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  // Only listen if not running as a Vercel serverless function
+  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;
